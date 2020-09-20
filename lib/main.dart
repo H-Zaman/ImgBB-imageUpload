@@ -1,7 +1,12 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:node_js_image_upload/imgbbResponseModel.dart';
-import '';
 
 void main() {
   runApp(MyApp());
@@ -30,26 +35,80 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   bool delay = true;
+  bool loading = false;
+  String txt = 'Choose Image';
   Dio dio = new Dio();
   ImgbbResponseModel imgbbResponse;
-  void _incrementCounter() async {
-    print('upload image');
+
+  File _image;
+  final picker = ImagePicker();
+
+  Future getImage() async {
+    final pickedFile = await picker.getImage(source: ImageSource.gallery);
+
+    setState(() {
+      _image = File(pickedFile.path);
+    });
+  }
+
+
+  void uploadingImageViaImageUrl() async {
+    setState(() {
+      loading = true;
+    });
     FormData formData = FormData.fromMap({
       "key" : imgBBkey,
       "image" : imageString
     });
-    print('form data set');
 
     Response response = await dio.post(
       "https://api.imgbb.com/1/upload",
       data: formData
     );
-    print('response');
-    imgbbResponse = ImgbbResponseModel.fromJson(response.data);
-    print('response converting');
+    if(response.statusCode != 400){
+      imgbbResponse = ImgbbResponseModel.fromJson(response.data);
+      setState(() {
+        delay = false;
+        loading = false;
+      });
+    } else{
+      txt = 'Error Upload';
+      setState(() {
+        loading = false;
+      });
+    }
+  }
+
+  void uploadImageFile(File _image) async {
     setState(() {
-      delay = false;
+      loading = true;
     });
+    ByteData bytes = await rootBundle.load(_image.path);
+    var buffer = bytes.buffer;
+    var m = base64.encode(Uint8List.view(buffer));
+
+    FormData formData = FormData.fromMap({
+      "key" : imgBBkey,
+      "image" :m
+    });
+
+    Response response = await dio.post(
+      "https://api.imgbb.com/1/upload",
+      data: formData,
+    );
+    print(response.data);
+    if(response.statusCode != 400){
+      imgbbResponse = ImgbbResponseModel.fromJson(response.data);
+      setState(() {
+        delay = false;
+        loading = false;
+      });
+    } else{
+      txt = 'Error Upload';
+      setState(() {
+        loading = false;
+      });
+    }
   }
 
   @override
@@ -58,16 +117,34 @@ class _MyHomePageState extends State<MyHomePage> {
       appBar: AppBar(
         title: Text(widget.title),
       ),
-      body: Center(
-        child: delay ? Text('') : CircleAvatar(
-          radius: 100,
-          backgroundImage: NetworkImage(
-            imgbbResponse.data.displayUrl
-          ),
+      body: loading ? Center(child: CircularProgressIndicator()) : Center(
+        child: Column(
+          children: [
+            SizedBox(height: 50,),
+            RaisedButton(
+              onPressed: () async{
+                await getImage();
+                uploadImageFile(_image);
+              },
+              child: _image == null ? Text(txt) : Container(
+                height: 100,
+                width: 100,
+                child: Image.file(_image)),
+            ),
+            SizedBox(height: 50,),
+            delay ? Text(txt) : CircleAvatar(
+              radius: 100,
+              backgroundImage: NetworkImage(
+                  imgbbResponse.data.displayUrl
+              ),
+            ),
+            Spacer(),
+            Text(imageString)
+          ],
         )
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
+        onPressed: uploadingImageViaImageUrl,
         tooltip: 'Increment',
         child: Icon(Icons.add),
       ), // This trailing comma makes auto-formatting nicer for build methods.
